@@ -16,6 +16,8 @@ Of Note:
 - If multiple queues are in use, no guarantees are made as to how time is distributed. This still depends on unity yield handling.
 
 LIMITATIONS:
-- BetterBehavior is currently only able to make these guarantees with IEnumerators. This applies to both the jobs fed to it directly and all downstream jobs that are yielded. If "yield return StartCoroutine(MyIEnumeratorMethod());" is yielded, a Coroutine will ultimately be fed to BetterBehavior, causing it to crash. Instead, simply use the form "yield return MyIEnumeratorMethod();"
+- BetterBehavior is currently cannot make guarantees or accept Coroutines or AsyncOperations. This applies to both the jobs fed to it directly and all downstream jobs that are yielded. If "yield return StartCoroutine(MyIEnumeratorMethod());" is yielded, a Coroutine will ultimately be fed to BetterBehavior, causing it to crash. Instead, simply use the form "yield return MyIEnumeratorMethod();"
+- The reason that types such as Coroutine and AsyncOperation is that they cannot be unwound and executed chunk by chunk manually/have their exceptions retrieved/managed.
+- The following yield types (and descendents) are accepted and passed, as they do not execute custom code: YieldInstruction, CustomYieldInstruction, null
 
 I might add more features to this if requested, but the try/finally thing was the one that always burned me, especially if it was some downstream effect.
