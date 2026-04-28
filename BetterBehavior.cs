@@ -1,22 +1,3 @@
-/**
-* Better Behavior
-*
-* Copyright 2026 Draque Thompson
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-* 	http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*
-*/
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -37,6 +18,7 @@ namespace com.DarisaDesigns
         private readonly Dictionary<int, Queue<WorkUnit>> workQueue = new();
         private readonly HashSet<long> cancelledWorkIds = new();
         private readonly Dictionary<int, long> assignedQueueWorkIds = new();
+        private readonly Dictionary<long, string> workIdCallTraces = new();
         private long curWorkId = 0;
 
 
@@ -50,6 +32,7 @@ namespace com.DarisaDesigns
         /// <returns>Coroutine representing the full work of the queue that work was assigned to.</returns>
         public Coroutine QueueCoroutine(IEnumerator work, bool resetQueue = false, int targetQueueId = 0, Action<Exception> onException = null)
         {
+            var trace = System.Environment.StackTrace.ToString(); // tied to workID in case of failures to report call location
             if (this == null || this.gameObject == null || !this.gameObject.activeInHierarchy)
                 throw new Exception("Cannot run code from a disabled or inactive object");
             if (work == null)
@@ -62,7 +45,7 @@ namespace com.DarisaDesigns
 
             workQueue[targetQueueId].Enqueue(new(work, onException));
             if (!CurQueueCoroutines.ContainsKey(targetQueueId) || CurQueueCoroutines[targetQueueId] == null)
-                CurQueueCoroutines[targetQueueId] = StartCoroutine(StartSafely(RunQueue(targetQueueId)));
+                CurQueueCoroutines[targetQueueId] = StartCoroutine(StartSafely(RunQueue(targetQueueId, trace)));
 
             if (CurQueueCoroutines.TryGetValue(targetQueueId, out var myCoroutine))
                 return myCoroutine;
@@ -124,13 +107,14 @@ namespace com.DarisaDesigns
             return null;
         }
 
-        private IEnumerator RunQueue(int targetQueue)
+        private IEnumerator RunQueue(int targetQueue, string trace)
         {
             // wait for prior iteration of queue to finish winding down before beginning
             while (assignedQueueWorkIds.ContainsKey(targetQueue))
                 yield return null;
 
             var workId = GetNextWorkId();
+            workIdCallTraces[workId] = trace;
             try
             {
                 assignedQueueWorkIds[targetQueue] = workId;
@@ -147,6 +131,7 @@ namespace com.DarisaDesigns
             {
                 CurrentWork.Remove(targetQueue);
                 assignedQueueWorkIds.Remove(targetQueue);
+                workIdCallTraces.Remove(workId);
             }
         }
 
@@ -198,6 +183,7 @@ namespace com.DarisaDesigns
                             parentDispose.Dispose();
                     }
                     Debug.LogException(e);
+                    PrintStack();
                     SafeInvokeOnException(e);
                     yield break;
                 }
@@ -208,31 +194,22 @@ namespace com.DarisaDesigns
                     stack.Push(nested);
                     continue;
                 }
-                else if (current is Coroutine)
+                else if (current is Coroutine coroutine)
                 {
-                    var msg = new Exception("Please use form: yield return MyIEnumeratorCall() rather than yield return StartCoroutine(MyIEnumeratorCall()) to allow BetterBehavior full scope.");
-                    Debug.LogException(msg);
-                    SafeInvokeOnException(msg);
-                    yield return TerminateStack();
-                    break;
+                    Debug.LogWarning("Please use form: yield return MyIEnumeratorCall() rather than yield return StartCoroutine(MyIEnumeratorCall()) to allow BetterBehavior full scope. Continuing unsafe execution.");
+                    PrintStack();
                 }
-                else if (current is AsyncOperation)
+                else if (current is AsyncOperation asyncOp)
                 {
-                    var msg = new Exception("BetterBehavior cannot control behavior of nested AsyncOperation");
-                    Debug.LogException(msg);
-                    SafeInvokeOnException(msg);
-                    yield return TerminateStack();
-                    break;
+                    Debug.LogWarning("BetterBehavior cannot control behavior of nested AsyncOperation. Continuing unsafe execution.");
+                    PrintStack();
                 }
                 else if (current != null
                     && current is not YieldInstruction
                     && current is not CustomYieldInstruction)
                 {
-                    var msg = new Exception("BetterBehavior can consume exclusively IEnumerators, YieldInstruction, CustomYieldInstruction, and null (including nested operations).");
-                    Debug.LogException(msg);
-                    SafeInvokeOnException(msg);
-                    yield return TerminateStack();
-                    break;
+                    Debug.Log("BetterBehavior can safely consume exclusively IEnumerators, YieldInstruction, CustomYieldInstruction, and null (including nested operations). Continuing unsafe execution.");
+                    PrintStack();
                 }
 
                 yield return current;
@@ -246,6 +223,14 @@ namespace com.DarisaDesigns
                     }
                     yield return null; // yield to allow RunQueue() to quit before removing workId
                     cancelledWorkIds.Remove(workId);
+                }
+
+                void PrintStack()
+                {
+                    if (workIdCallTraces.TryGetValue(workId, out var trace))
+                        Debug.LogWarning($"Trace of initial coroutine call:\n{trace}");
+                    else
+                        Debug.LogWarning("Unable to trace coroutine's initial call stack.");
                 }
             }
 

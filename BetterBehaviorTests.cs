@@ -1,32 +1,15 @@
-/**
-* Better Behavior Tests
-*
-* Copyright 2026 Draque Thompson
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-* 	http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*
-*/
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 using UnityEngine;
 using UnityEngine.TestTools;
 
 namespace com.DarisaDesigns
 {
-    public class BetterBehaviorTests
+    public class TestBetterBehavior
     {
         private bool finalBlockRan = false;
         private bool parentNestedFinalBlockRan = false;
@@ -228,7 +211,8 @@ namespace com.DarisaDesigns
         [UnityTest]
         public IEnumerator TestFedCorotine()
         {
-            LogAssert.Expect(LogType.Exception, "Exception: Please use form: yield return MyIEnumeratorCall() rather than yield return StartCoroutine(MyIEnumeratorCall()) to allow BetterBehavior full scope.");
+            var warning = new Regex(".*Continuing unsafe execution..*");
+            LogAssert.Expect(LogType.Warning, warning);
             yield return tester.QueueCoroutine(parent());
 
             IEnumerator parent()
