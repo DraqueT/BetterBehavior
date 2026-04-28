@@ -1,0 +1,21 @@
+{
+  "name": "com.darisadesigns.betterbehavior",
+  "version": "1.0.0",
+  "displayName": "Better Behavior",
+  "description": "A MonoBehaviour replacement that guarantees finally execution for managed IEnumerator chains and adds sequential coroutine queues.",
+  "unity": "2021.3",
+  "keywords": [
+    "coroutines",
+    "ienumerator",
+    "async",
+    "queue",
+    "monobehaviour",
+    "monobehavior"
+  ],
+  "author": {
+    "name": "Darisa Designs"
+  },
+  "license": "Apache-2.0",
+  "documentationUrl": "https://github.com/DarisaDesigns/BetterBehavior#readme",
+  "licensesUrl": "https://www.apache.org/licenses/LICENSE-2.0"
+}

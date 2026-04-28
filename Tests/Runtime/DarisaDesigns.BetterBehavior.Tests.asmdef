@@ -1,0 +1,19 @@
+{
+  "name": "DarisaDesigns.BetterBehavior.Tests",
+  "rootNamespace": "com.DarisaDesigns",
+  "references": [
+    "DarisaDesigns.BetterBehavior"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

@@ -1,6 +1,35 @@
-BetterBehavior is a class that extends MonoBehavior to address problems I have encountered. It guarantees finally execution for work expressed as nested IEnumerator chains. Engine-managed coroutine handles (Coroutine) and other opaque async primitives will run, but result in a warning, as code executed under them cannot be guaranteed.
+BetterBehavior is a Unity Package Manager package that extends `MonoBehaviour` to address coroutine lifecycle problems. It guarantees `finally` execution for work expressed as nested `IEnumerator` chains. Engine-managed coroutine handles (`Coroutine`) and other opaque async primitives will run, but result in a warning, as code executed under them cannot be guaranteed.
 
-1) MonoBehavior does not properly respect try/finally blocks. If code his an exception or for any unexpected reason ceases execution, the finally block will NOT be hit until the parent object of the MonoBehavior is disabled or destroyed.
+## Installation
+
+After fetching this repo:
+ 1) In Unity, open Window > Package Manager.
+ 2) Click the + button.
+ 3) Choose Add package from disk....
+ 4) In the fetched folder, select the file: package.json
+
+### Git URL
+
+Add this package to your project's `Packages/manifest.json`:
+
+```json
+{
+  "dependencies": {
+    "com.darisadesigns.betterbehavior": "https://github.com/DarisaDesigns/BetterBehavior.git"
+  }
+}
+```
+
+### Local package
+
+You can also copy or clone this folder into a Unity project's `Packages/` directory and reference it as a local package.
+
+## Contents
+
+- `Runtime/` contains the `BetterBehavior` runtime code and assembly definition.
+- `Tests/Runtime/` contains Unity Test Framework coverage for package validation.
+
+1) MonoBehavior does not properly respect try/finally blocks. If code hits an exception or for any unexpected reason ceases execution, the finally block will NOT be hit until the parent object of the MonoBehavior is disabled or destroyed.
   - BetterBehavior corrects this. Coroutines running under it are guaranteed to have try/finally blocks which execute in the expected manner.
 2) MonoBehavior does not have any kind of queuing system built in which will sequentially run coroutines.
   - BetterBehavior's QueueCoroutine() method largely replaces StartCoroutine(), and allows for single file queuing of coroutines.
