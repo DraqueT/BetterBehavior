@@ -1,4 +1,5 @@
-BetterBehavior is a class that extends MonoBehavior to address problems I have encountered.
+BetterBehavior is a class that extends MonoBehavior to address problems I have encountered. It guarantees finally execution for work expressed as nested IEnumerator chains. Engine-managed coroutine handles (Coroutine) and other opaque async primitives are rejected because they
+  cannot be unwound safely.
 
 1) MonoBehavior does not properly respect try/finally blocks. If code his an exception or for any unexpected reason ceases execution, the finally block will NOT be hit until the parent object of the MonoBehavior is disabled or destroyed.
   - BetterBehavior corrects this. Coroutines running under it are guaranteed to have try/finally blocks which execute in the expected manner.
