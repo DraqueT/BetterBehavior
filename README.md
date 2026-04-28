@@ -6,6 +6,8 @@ BetterBehavior is a class that extends MonoBehavior to address problems I have e
 2) MonoBehavior does not have any kind of queuing system built in which will sequentially run coroutines.
   - BetterBehavior's QueueCoroutine() method largely replaces StartCoroutine(), and allows for single file queuing of coroutines.
   - Arbitrarily many queues may be addressed via an optional id parameter (defaults to 0)
+  - Can fetch a yieldable object representing the total work of a queue by queueId (defaults to 0)
+  - Can fetch a yieldable object representing the currently processing coroutine of a queue by queueId (defaults to 0)
 3) Unity does not have any way to gather the exception which led to the failure of a Coroutine.
   - BetterBehavior allows an Action to be passed in which processes the exception causing your coroutine to fail in any way you like.
   - BetterBehavior guards against actions which, themselves throw, but has no mechanism to directly return the exceptions.
