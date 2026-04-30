@@ -32,7 +32,7 @@ You can also copy or clone this folder into a Unity project's `Packages/` direct
 1) MonoBehavior does not properly respect try/finally blocks. If code hits an exception or for any unexpected reason ceases execution, the finally block will NOT be hit until the parent object of the MonoBehavior is disabled or destroyed.
   - BetterBehavior corrects this. Coroutines running under it are guaranteed to have try/finally blocks which execute in the expected manner.
 2) MonoBehavior does not have any kind of queuing system built in which will sequentially run coroutines.
-  - BetterBehavior's QueueCoroutine() method largely replaces StartCoroutine(), and allows for single file queuing of coroutines.
+  - BetterBehavior's QueueIEnumerator()/QueueToCoroutine methods largely replace StartCoroutine(), and allows for single file queuing of coroutines.
   - Arbitrarily many queues may be addressed via an optional id parameter (defaults to 0)
   - Can fetch a yieldable object representing the total work of a queue by queueId (defaults to 0)
   - Can fetch a yieldable object representing the currently processing coroutine of a queue by queueId (defaults to 0)
