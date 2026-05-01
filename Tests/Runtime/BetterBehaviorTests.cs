@@ -9,7 +9,7 @@ using UnityEngine.TestTools;
 
 namespace com.DarisaDesigns
 {
-    public class TestBetterBehavior
+    public class BetterBehaviorTests
     {
         private bool finalBlockRan = false;
         private bool parentNestedFinalBlockRan = false;
@@ -37,14 +37,14 @@ namespace com.DarisaDesigns
         [UnityTest]
         public IEnumerator TestBasicRun()
         {
-            yield return tester.StartSafely(BasicRun());
+            yield return tester.SafelyStartCoroutine(BasicRun());
             Assert.IsTrue(basicFunctionRan);
         }
 
         [UnityTest]
         public IEnumerator TestBasicQueueing()
         {
-            yield return tester.QueueCoroutine(BasicRun());
+            yield return tester.QueueIEnumerator(BasicRun());
             Assert.IsTrue(basicFunctionRan);
         }
 
@@ -52,7 +52,7 @@ namespace com.DarisaDesigns
         public IEnumerator TestFinalBlockRunsAfterException()
         {
             LogAssert.Expect(LogType.Exception, "Exception: ExpectedException");
-            yield return tester.QueueCoroutine(ExceptionThrown());
+            yield return tester.QueueIEnumerator(ExceptionThrown());
             Assert.IsTrue(finalBlockRan);
         }
 
@@ -60,7 +60,7 @@ namespace com.DarisaDesigns
         public IEnumerator TestNestedFinalBlocksRunsAfterException()
         {
             LogAssert.Expect(LogType.Exception, "Exception: ExpectedException");
-            yield return tester.QueueCoroutine(NestedExceptionThrown());
+            yield return tester.QueueIEnumerator(NestedExceptionThrown());
             Assert.IsTrue(parentNestedFinalBlockRan);
         }
 
@@ -68,7 +68,7 @@ namespace com.DarisaDesigns
         public IEnumerator TestIsQueueDone()
         {
             Assert.IsTrue(tester.IsQueueDone());
-            tester.QueueCoroutine(BasicRun());
+            tester.QueueToCoroutine(BasicRun());
             Assert.IsFalse(tester.IsQueueDone());
             yield return null;
             Assert.IsTrue(tester.IsQueueDone());
@@ -80,19 +80,24 @@ namespace com.DarisaDesigns
             var curRunning = false;
             var sequence = 0;
             bool[] testOrderedQueue = new bool[10];
+            var waitTime = new WaitForSeconds(0.1f);
 
             for (var i = 0; i < testOrderedQueue.Length; i++)
-                tester.QueueCoroutine(setValTrue(i));
+                tester.QueueToCoroutine(setValTrue(i));
             while (!tester.IsQueueDone())
                 yield return null;
-            foreach (var queueRan in testOrderedQueue)
-                Assert.IsTrue(queueRan);
+            for (var i = 0; i < testOrderedQueue.Length; i++)
+            {
+                var queueRan = testOrderedQueue[i];
+                Assert.IsTrue(queueRan, $"Queue {i} did not complete.");
+            }
 
             IEnumerator setValTrue(int i)
             {
                 Assert.AreEqual(i, sequence); // ensure proper order
-                Assert.IsFalse(curRunning); // ensure no run overlap
+                Assert.IsFalse(curRunning, "Overlap of runs"); // ensure no run overlap
                 curRunning = true;
+                yield return waitTime;
                 sequence++;
                 yield return null;
                 testOrderedQueue[i] = true;
@@ -106,7 +111,7 @@ namespace com.DarisaDesigns
             bool[] testOrderedQueue = new bool[10];
 
             for (var i = 0; i < testOrderedQueue.Length; i++)
-                tester.QueueCoroutine(setValTrue(i), targetQueueId: i);
+                tester.QueueToCoroutine(setValTrue(i), targetQueueId: i);
             for (var i = 0; i < testOrderedQueue.Length; i++)
                 while (!tester.IsQueueDone(i))
                     yield return null;
@@ -122,11 +127,11 @@ namespace com.DarisaDesigns
 
         [UnityTest]
         public IEnumerator TestResetQueue()
-        {
+        { 
             bool[] testOrderedQueue = new bool[2];
 
-            tester.QueueCoroutine(setValTrue(0));
-            tester.QueueCoroutine(setValTrue(1), resetQueue: true);
+            tester.QueueToCoroutine(setValTrue(0));
+            tester.QueueToCoroutine(setValTrue(1), resetQueue: true);
             while (!tester.IsQueueDone())
                 yield return null;
             Assert.IsFalse(testOrderedQueue[0]);
@@ -145,7 +150,7 @@ namespace com.DarisaDesigns
             var firstFinally = false;
             var secondFinally = false;
 
-            tester.QueueCoroutine(parentCoroutine());
+            tester.QueueToCoroutine(parentCoroutine());
             tester.ResetQueue();
             yield return null;
             Assert.IsTrue(firstFinally);
@@ -182,7 +187,7 @@ namespace com.DarisaDesigns
             LogAssert.Expect(LogType.Exception, "Exception: ExpectedException");
             Exception resultException = null;
             void exceptionHandler(Exception e) => resultException = e;
-            yield return tester.QueueCoroutine(ExceptionThrown(), onException: exceptionHandler);
+            yield return tester.QueueIEnumerator(ExceptionThrown(), onException: exceptionHandler);
 
             Assert.IsNotNull(resultException);
             Assert.AreEqual("ExpectedException", resultException.Message);
@@ -194,7 +199,7 @@ namespace com.DarisaDesigns
             LogAssert.Expect(LogType.Exception, "Exception: ExpectedException");
             LogAssert.Expect(LogType.Exception, "Exception: Also-Expected");
             static void exceptionHandler(Exception e) => throw new Exception("Also-Expected");
-            yield return tester.QueueCoroutine(ExceptionThrown(), onException: exceptionHandler);
+            yield return tester.QueueIEnumerator(ExceptionThrown(), onException: exceptionHandler);
         }
 
         [UnityTest]
@@ -203,8 +208,8 @@ namespace com.DarisaDesigns
             LogAssert.Expect(LogType.Exception, "Exception: ExpectedException");
             LogAssert.Expect(LogType.Exception, "Exception: Also-Expected");
             static void exceptionHandler(Exception e) => throw new Exception("Also-Expected");
-            yield return tester.QueueCoroutine(ExceptionThrown(), onException: exceptionHandler);
-            yield return tester.QueueCoroutine(BasicRun());
+            yield return tester.QueueIEnumerator(ExceptionThrown(), onException: exceptionHandler);
+            yield return tester.QueueIEnumerator(BasicRun());
             Assert.IsTrue(basicFunctionRan);
         }
 
@@ -213,7 +218,7 @@ namespace com.DarisaDesigns
         {
             var warning = new Regex(".*Continuing unsafe execution..*");
             LogAssert.Expect(LogType.Warning, warning);
-            yield return tester.QueueCoroutine(parent());
+            yield return tester.QueueIEnumerator(parent());
 
             IEnumerator parent()
             {
@@ -231,7 +236,7 @@ namespace com.DarisaDesigns
         public IEnumerator TestAllAllowedTypes()
         {
             var complete = false;
-            yield return tester.QueueCoroutine(testTypes());
+            yield return tester.QueueIEnumerator(testTypes());
             Assert.IsTrue(complete);
 
             IEnumerator testTypes()
@@ -263,7 +268,7 @@ namespace com.DarisaDesigns
             yield return null;
             try
             {
-                throw new System.Exception("ExpectedException");
+                throw new Exception("ExpectedException");
             }
             finally
             {

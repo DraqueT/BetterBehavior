@@ -6,14 +6,14 @@ using UnityEngine;
 namespace com.DarisaDesigns
 {
     /// <summary>
-    /// This can be used as an upgrade from Monobehavior. It adds the concept of queued coroutines.
-    /// Queued coroutines will be executed in sequence. Finally blocks are now GUARANTEED. The queue
+    /// This can be used as an upgrade from Monobehavior. It adds the concept of queued IEnumerators.
+    /// Queued IEnumerators will be executed in sequence. Finally blocks are now GUARANTEED. The queue
     /// defaults to ID = 0, which keeps track of multiple queues, but additional queues can be accessed
     /// as well if you need multiple queues for a single object.
     /// </summary>
     public class BetterBehavior : MonoBehaviour
     {
-        private readonly Dictionary<int, Coroutine> CurQueueCoroutines = new();
+        private readonly Dictionary<int, IEnumerator> CurQueueIEnumerators = new();
         private readonly Dictionary<int, WorkUnit> CurrentWork = new();
         private readonly Dictionary<int, Queue<WorkUnit>> workQueue = new();
         private readonly HashSet<long> cancelledWorkIds = new();
@@ -21,22 +21,37 @@ namespace com.DarisaDesigns
         private readonly Dictionary<long, string> workIdCallTraces = new();
         private long curWorkId = 0;
 
-
         /// <summary>
-        /// Queues a coroutine to be completed after others finish
+        /// Use this as a top level call to start coroutines that will never be yielded. If they will be yielded, instead, call QueueIEnumerator
+        /// and yield that. Yielding the return value of QueueToCoroutine will result in unmanaged coroutine behavior and loss of BetterBehavior
+        /// guarantees. Also, it will toss warnings up, bothering you to fix it.
         /// </summary>
-        /// <param name="work">Coroutine to queue</param>
+        /// <param name="work">IEnumerator to queue</param>
         /// <param name="resetQueue">If set to true, cancels all prior queued events before starting next event</param>
         /// <param name="targetQueueId">This is the ID of the queue you are adding work to. Defaults to 0. Can be any arbitrary int.</param>
         /// <param name="onException">This action will consume any uncaught exception which interrupts work passed into the queue</param>
-        /// <returns>Coroutine representing the full work of the queue that work was assigned to.</returns>
-        public Coroutine QueueCoroutine(IEnumerator work, bool resetQueue = false, int targetQueueId = 0, Action<Exception> onException = null)
+        /// <returns>IEnumerator representing the full work of the queue that work was assigned to.</returns>
+        public Coroutine QueueToCoroutine(IEnumerator work, bool resetQueue = false, int targetQueueId = 0, Action<Exception> onException = null)
         {
-            var trace = System.Environment.StackTrace.ToString(); // tied to workID in case of failures to report call location
+            return StartCoroutine(QueueIEnumerator(work, resetQueue, targetQueueId, onException, Environment.StackTrace.ToString()));
+        }
+
+        /// <summary>
+        /// Queues a IEnumerator to be completed after others finish
+        /// </summary>
+        /// <param name="work">IEnumerator to queue</param>
+        /// <param name="resetQueue">If set to true, cancels all prior queued events before starting next event</param>
+        /// <param name="targetQueueId">This is the ID of the queue you are adding work to. Defaults to 0. Can be any arbitrary int.</param>
+        /// <param name="onException">This action will consume any uncaught exception which interrupts work passed into the queue</param>
+        /// <returns>IEnumerator representing the full work of the queue that work was assigned to.</returns>
+        public IEnumerator QueueIEnumerator(IEnumerator work, bool resetQueue = false, int targetQueueId = 0, Action<Exception> onException = null, string trace = null)
+        {
+            if (trace == null)
+                trace = Environment.StackTrace.ToString(); // if not passed, attempt to capture trace here
             if (this == null || this.gameObject == null || !this.gameObject.activeInHierarchy)
                 throw new Exception("Cannot run code from a disabled or inactive object");
             if (work == null)
-                throw new ArgumentException("Target coroutine work cannot be null.");
+                throw new ArgumentException("Target IEnumerator work cannot be null.");
             if (!workQueue.ContainsKey(targetQueueId))
                 workQueue[targetQueueId] = new();
 
@@ -44,12 +59,12 @@ namespace com.DarisaDesigns
                 ResetQueue(targetQueueId);
 
             workQueue[targetQueueId].Enqueue(new(work, onException));
-            if (!CurQueueCoroutines.ContainsKey(targetQueueId) || CurQueueCoroutines[targetQueueId] == null)
-                CurQueueCoroutines[targetQueueId] = StartCoroutine(StartSafely(RunQueue(targetQueueId, trace)));
+            if (!CurQueueIEnumerators.ContainsKey(targetQueueId) || CurQueueIEnumerators[targetQueueId] == null)
+                CurQueueIEnumerators[targetQueueId] = SafelyWrapIEnum(RunQueue(targetQueueId, trace), trace: trace);
 
-            if (CurQueueCoroutines.TryGetValue(targetQueueId, out var myCoroutine))
-                return myCoroutine;
-            return null;
+            if (CurQueueIEnumerators.TryGetValue(targetQueueId, out var myIEnumerator))
+                yield return myIEnumerator;
+            yield return null;
         }
 
         private long GetNextWorkId()
@@ -84,15 +99,15 @@ namespace com.DarisaDesigns
         }
 
         /// <summary>
-        /// Returns the target queue's driver coroutine
+        /// Returns the target queue's driving IEnumerator
         /// </summary>
         /// <param name="targetQueue">Queue to fetch current work (if any) from. Defaults to 0.</param> 
-        /// <returns>Currently processing coroutine of target queue. Null if none.</returns>
-        public Coroutine GetCoroutineDriver(int targetQueue = 0)
+        /// <returns>Currently processing IEnumerator of target queue. Null if none.</returns>
+        public IEnumerator GetIEnumeratorDriver(int targetQueue = 0)
         {
-            if (CurQueueCoroutines.TryGetValue(targetQueue, out var targetCoroutine))
-                return targetCoroutine;
-            return null;
+            if (CurQueueIEnumerators.TryGetValue(targetQueue, out var targetIEnumerator))
+                yield return targetIEnumerator;
+            yield return null;
         }
 
         /// <summary>
@@ -103,8 +118,8 @@ namespace com.DarisaDesigns
         public IEnumerator GetCurWork(int targetQueue)
         {
             if (CurrentWork.TryGetValue(targetQueue, out var work))
-                return work.targetCoroutine;
-            return null;
+                yield return work.targetIEnumerator;
+            yield return null;
         }
 
         private IEnumerator RunQueue(int targetQueue, string trace)
@@ -123,9 +138,9 @@ namespace com.DarisaDesigns
                     CurrentWork[targetQueue] = workQueue[targetQueue].Dequeue();
                     var workUnit = CurrentWork[targetQueue];
 
-                    yield return StartSafely(workUnit.targetCoroutine, workUnit.OnException, workId);
+                    yield return SafelyWrapIEnum(workUnit.targetIEnumerator, workUnit.OnException, workId, trace);
                 }
-                CurQueueCoroutines[targetQueue] = null;
+                CurQueueIEnumerators[targetQueue] = null;
             }
             finally
             {
@@ -136,19 +151,38 @@ namespace com.DarisaDesigns
         }
 
         /// <summary>
-        /// A basic replacement for StartCoroutine. Any final blocks are guaranteed to run post-uncaught exception.
-        /// All exceptions are fed to the Debug log, whether or not there is an onException callback.
+        /// A basic replacement for StartCoroutine. Wraps work in coroutine via StartCoroutine. Any final blocks are guaranteed to run post-uncaught exception.
+        /// All exceptions are fed to the Debug log, whether or not there is an onException callback. Only use this if you do not intend to yield its coroutine,
+        /// as that will itself be outside BetterBehavior's ability to manage.
         /// </summary>
         /// <param name="targetWork">Work to be started.</param>
         /// <param name="onException">An action which will be fed any exception which causes the coroutine to terminate early.</param>
         /// <param name="id">Used for managed cancelation.</param>
         /// <returns>Yields like a typical coroutine in all cases except if the target coroutine experiences an uncaught exception. In this case, it yields a break.</returns>
-        public IEnumerator StartSafely(IEnumerator targetWork, Action<Exception> onException = null, long workId = -1)
+        public Coroutine SafelyStartCoroutine(IEnumerator targetWork, Action<Exception> onException = null, long workId = -1)
+        {
+            return StartCoroutine(SafelyWrapIEnum(targetWork, onException, workId, Environment.StackTrace.ToString()));
+        }
+
+        /// <summary>
+        /// Half of the basic replacement for StartCoroutine. Does not start work, but returns wrapped IEnumerator. Any final blocks are guaranteed to run post-uncaught exception.
+        /// All exceptions are fed to the Debug log, whether or not there is an onException callback.
+        /// </summary>
+        /// <param name="targetWork">Work to be started.</param>
+        /// <param name="onException">An action which will be fed any exception which causes the coroutine to terminate early.</param>
+        /// <param name="workId">Used for managed cancelation.</param>
+        /// <param name="trace">Optionally provided for naked work to provide context
+        /// <returns>Passed work wrapped in BestBehavior code for behavioral guarantees.</returns>
+        public IEnumerator SafelyWrapIEnum(IEnumerator targetWork, Action<Exception> onException = null, long workId = -1, string trace = null)
         {
             if (targetWork == null)
-                throw new ArgumentException("Target coroutine targetWork cannot be null.");
+                throw new ArgumentException("Target IEnumerator targetWork cannot be null.");
             var stack = new Stack<IEnumerator>();
             stack.Push(targetWork);
+           
+            if (workId == -1 && trace == null)
+                trace = Environment.StackTrace.ToString(); // naked calls to this will not have trace recorded with workId
+            trace ??= "";
 
             while (stack.Count > 0)
             {
@@ -188,18 +222,22 @@ namespace com.DarisaDesigns
                     yield break;
                 }
 
-                // ensure that nested coroutines are handled in the same manner
+                // ensure that nested IEnumerators are handled in the same manner
                 if (current is IEnumerator nested)
                 {
                     stack.Push(nested);
                     continue;
                 }
-                else if (current is Coroutine coroutine)
+
+                if (workId == -1) // value -1 treated as temp value and set on the fly for naked calls
+                    workIdCallTraces[-1] = trace;
+
+                if (current is Coroutine)
                 {
                     Debug.LogWarning("Please use form: yield return MyIEnumeratorCall() rather than yield return StartCoroutine(MyIEnumeratorCall()) to allow BetterBehavior full scope. Continuing unsafe execution.");
                     PrintStack();
                 }
-                else if (current is AsyncOperation asyncOp)
+                else if (current is AsyncOperation)
                 {
                     Debug.LogWarning("BetterBehavior cannot control behavior of nested AsyncOperation. Continuing unsafe execution.");
                     PrintStack();
@@ -228,9 +266,9 @@ namespace com.DarisaDesigns
                 void PrintStack()
                 {
                     if (workIdCallTraces.TryGetValue(workId, out var trace))
-                        Debug.LogWarning($"Trace of initial coroutine call:\n{trace}");
+                        Debug.LogWarning($"Trace of initial work's call:\n{trace}");
                     else
-                        Debug.LogWarning("Unable to trace coroutine's initial call stack.");
+                        Debug.LogWarning("Unable to trace work's initial call stack.");
                 }
             }
 
@@ -251,12 +289,12 @@ namespace com.DarisaDesigns
 
     class WorkUnit
     {
-        public WorkUnit(IEnumerator targetCoroutine, Action<Exception> OnException)
+        public WorkUnit(IEnumerator targetIEnumerator, Action<Exception> OnException)
         {
-            this.targetCoroutine = targetCoroutine;
+            this.targetIEnumerator = targetIEnumerator;
             this.OnException = OnException;
         }
-        public IEnumerator targetCoroutine;
+        public IEnumerator targetIEnumerator;
         public Action<Exception> OnException;
     }
 }
