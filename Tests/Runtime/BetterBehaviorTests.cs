@@ -68,9 +68,9 @@ namespace com.DarisaDesigns
         public IEnumerator TestIsQueueDone()
         {
             Assert.IsTrue(tester.IsQueueDone());
-            tester.QueueToCoroutine(BasicRun());
+            var queueToRun = tester.QueueToCoroutine(BasicRun());
             Assert.IsFalse(tester.IsQueueDone());
-            yield return null;
+            yield return queueToRun; // yielding a coroutine is typically a bad practice, but BetterBehavior never manages tests
             Assert.IsTrue(tester.IsQueueDone());
         }
 
@@ -127,7 +127,7 @@ namespace com.DarisaDesigns
 
         [UnityTest]
         public IEnumerator TestResetQueue()
-        { 
+        {
             bool[] testOrderedQueue = new bool[2];
 
             tester.QueueToCoroutine(setValTrue(0));
@@ -149,10 +149,16 @@ namespace com.DarisaDesigns
         {
             var firstFinally = false;
             var secondFinally = false;
+            var enteredChild = false;
 
-            tester.QueueToCoroutine(parentCoroutine());
+            var queued = tester.QueueToCoroutine(parentCoroutine());
+
+            while (!enteredChild)
+                yield return null;
+
             tester.ResetQueue();
-            yield return null;
+            yield return queued; // yielding a coroutine is typically a bad practice, but BetterBehavior never manages tests
+
             Assert.IsTrue(firstFinally);
             Assert.IsTrue(secondFinally);
 
@@ -170,9 +176,11 @@ namespace com.DarisaDesigns
 
             IEnumerator childCoroutine()
             {
+                enteredChild = true;
                 try
                 {
-                    yield return null;
+                    for (; ; )
+                        yield return null;
                 }
                 finally
                 {
@@ -229,6 +237,37 @@ namespace com.DarisaDesigns
             IEnumerator child()
             {
                 yield return null;
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator TestFedCorotineSuppressWarnings()
+        {
+            try
+            {
+                Application.logMessageReceived += LogHandler;
+                yield return tester.QueueIEnumerator(parent(), suppressWarnings: true);
+
+                IEnumerator parent()
+                {
+                    yield return null;
+                    yield return tester.StartCoroutine(child());
+                }
+
+                IEnumerator child()
+                {
+                    yield return null;
+                }
+            }
+            finally
+            {
+                Application.logMessageReceived -= LogHandler;
+            }
+
+            void LogHandler(string condition, string stackTrace, LogType type)
+            {
+                if (type == LogType.Warning && condition.Contains("Continuing unsafe execution"))
+                    Assert.Fail("Warning thrown, despite suppression setting");
             }
         }
 

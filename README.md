@@ -1,6 +1,6 @@
 BetterBehavior is a Unity Package Manager package that extends `MonoBehaviour` to address coroutine lifecycle problems. It guarantees `finally` execution for work expressed as nested `IEnumerator` chains. Engine-managed coroutine handles (`Coroutine`) and other opaque async primitives will run, but result in a warning, as code executed under them cannot be guaranteed.
 
-## Installation
+## Manual Installation
 
 After fetching this repo:
  1) In Unity, open Window > Package Manager.
@@ -8,7 +8,7 @@ After fetching this repo:
  3) Choose Add package from disk....
  4) In the fetched folder, select the file: package.json
 
-### Git URL
+### Manifest Installation via Git URL
 
 Add this package to your project's `Packages/manifest.json`:
 
@@ -19,10 +19,6 @@ Add this package to your project's `Packages/manifest.json`:
   }
 }
 ```
-
-### Local package
-
-You can also copy or clone this folder into a Unity project's `Packages/` directory and reference it as a local package.
 
 ## Contents
 
@@ -50,9 +46,10 @@ Of Note:
 
 LIMITATIONS:
 - BetterBehavior is currently cannot make guarantees within Coroutines or AsyncOperations. This applies to both the work fed to it directly and all downstream yielded objects.
+- *IMPORTANT* yield types such as WaitUntil and WaitWhile are accepted without warning, but HIDE UNMANAGED CODE. Any uncaught Exceptions thrown by these will result in hanging and unreported code. It is HIGHLY recommended that instead of these, patterns which simply use '''while (<case>) yield return null''' to avoid the problem altogether.
 - If Coroutines or AsyncOperations are encountered, crashes within them will simply hang as they would normally, with no visibility returned to the passed onException Action.
   - The reason for this is that types such as Coroutine and AsyncOperation cannot be unwound and executed step by step/have their exceptions caught and managed.
 - The following yield types (and descendents) are accepted and passed, as they do not execute custom code: YieldInstruction, CustomYieldInstruction, null
-- yield types such as WaitUntil and WaitWhile are accepted without warning, but HIDE UNMANAGED CODE. Any uncaught Exceptions thrown by these will result in hanging and unreported code. It is HIGHLY recommended that instead of these, patterns which simply use '''while (<case>) yield return null''' to avoid the problem altogether.
+- suppression of Coroutine/AsyncOp warnings must be done at the HEAD of IEnumeration work. If you yield a wrapped IEnumerator which suppresses warnings, the parent it yields to will still throw warnings unless it, itself has had the suppression parameter passed to it. When possible, avoid yielding Coroutines to minimize this.
 
 I might add more features to this if requested, but the try/finally thing was the one that always burned me, especially if it was some downstream effect.

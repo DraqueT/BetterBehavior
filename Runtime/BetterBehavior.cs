@@ -23,17 +23,18 @@ namespace com.DarisaDesigns
 
         /// <summary>
         /// Use this as a top level call to start coroutines that will never be yielded. If they will be yielded, instead, call QueueIEnumerator
-        /// and yield that. Yielding the return value of QueueToCoroutine will result in unmanaged coroutine behavior and loss of BetterBehavior
-        /// guarantees. Also, it will toss warnings up, bothering you to fix it.
+        /// and yield that. Yielding the return value of QueueToCoroutine outside of test scenarios may result in unmanaged coroutine behavior
+        /// and loss of BetterBehavior guarantees. Also, it will toss warnings up, bothering you to fix it.
         /// </summary>
         /// <param name="work">IEnumerator to queue</param>
         /// <param name="resetQueue">If set to true, cancels all prior queued events before starting next event</param>
         /// <param name="targetQueueId">This is the ID of the queue you are adding work to. Defaults to 0. Can be any arbitrary int.</param>
         /// <param name="onException">This action will consume any uncaught exception which interrupts work passed into the queue</param>
+        /// <param name="suppressWarnings">Sometimes reliance on unmanaged Coroutine/AsyncOperation/Etc. behavior is required. This silences warnings for these cases.</param>
         /// <returns>IEnumerator representing the full work of the queue that work was assigned to.</returns>
-        public Coroutine QueueToCoroutine(IEnumerator work, bool resetQueue = false, int targetQueueId = 0, Action<Exception> onException = null)
+        public Coroutine QueueToCoroutine(IEnumerator work, bool resetQueue = false, int targetQueueId = 0, Action<Exception> onException = null, bool suppressWarnings = false)
         {
-            return StartCoroutine(QueueIEnumerator(work, resetQueue, targetQueueId, onException, Environment.StackTrace.ToString()));
+            return StartCoroutine(QueueIEnumerator(work, resetQueue, targetQueueId, onException, Environment.StackTrace.ToString(), suppressWarnings));
         }
 
         /// <summary>
@@ -43,8 +44,10 @@ namespace com.DarisaDesigns
         /// <param name="resetQueue">If set to true, cancels all prior queued events before starting next event</param>
         /// <param name="targetQueueId">This is the ID of the queue you are adding work to. Defaults to 0. Can be any arbitrary int.</param>
         /// <param name="onException">This action will consume any uncaught exception which interrupts work passed into the queue</param>
+        /// <param name="trace">A string representing the relevant trace of the work's start point</param>
+        /// <param name="suppressWarnings">Sometimes reliance on unmanaged Coroutine/AsyncOperation/Etc. behavior is required. This silences warnings for these cases.</param>
         /// <returns>IEnumerator representing the full work of the queue that work was assigned to.</returns>
-        public IEnumerator QueueIEnumerator(IEnumerator work, bool resetQueue = false, int targetQueueId = 0, Action<Exception> onException = null, string trace = null)
+        public IEnumerator QueueIEnumerator(IEnumerator work, bool resetQueue = false, int targetQueueId = 0, Action<Exception> onException = null, string trace = null, bool suppressWarnings = false)
         {
             if (trace == null)
                 trace = Environment.StackTrace.ToString(); // if not passed, attempt to capture trace here
@@ -58,9 +61,9 @@ namespace com.DarisaDesigns
             if (resetQueue)
                 ResetQueue(targetQueueId);
 
-            workQueue[targetQueueId].Enqueue(new(work, onException));
+            workQueue[targetQueueId].Enqueue(new(work, onException, suppressWarnings));
             if (!CurQueueIEnumerators.ContainsKey(targetQueueId) || CurQueueIEnumerators[targetQueueId] == null)
-                CurQueueIEnumerators[targetQueueId] = SafelyWrapIEnum(RunQueue(targetQueueId, trace), trace: trace);
+                CurQueueIEnumerators[targetQueueId] = SafelyWrapIEnum(RunQueue(targetQueueId, trace), trace: trace, suppressWarnings: suppressWarnings);
 
             if (CurQueueIEnumerators.TryGetValue(targetQueueId, out var myIEnumerator))
                 yield return myIEnumerator;
@@ -135,10 +138,9 @@ namespace com.DarisaDesigns
                 assignedQueueWorkIds[targetQueue] = workId;
                 while (workQueue[targetQueue].Count > 0 && this != null && !cancelledWorkIds.Contains(workId))
                 {
-                    CurrentWork[targetQueue] = workQueue[targetQueue].Dequeue();
-                    var workUnit = CurrentWork[targetQueue];
-
-                    yield return SafelyWrapIEnum(workUnit.targetIEnumerator, workUnit.OnException, workId, trace);
+                    var workUnit = workQueue[targetQueue].Dequeue();
+                    CurrentWork[targetQueue] = workUnit;
+                    yield return SafelyWrapIEnum(workUnit.targetIEnumerator, workUnit.OnException, workId, trace, workUnit.suppressWarnings);
                 }
                 CurQueueIEnumerators[targetQueue] = null;
             }
@@ -152,16 +154,17 @@ namespace com.DarisaDesigns
 
         /// <summary>
         /// A basic replacement for StartCoroutine. Wraps work in coroutine via StartCoroutine. Any final blocks are guaranteed to run post-uncaught exception.
-        /// All exceptions are fed to the Debug log, whether or not there is an onException callback. Only use this if you do not intend to yield its coroutine,
-        /// as that will itself be outside BetterBehavior's ability to manage.
+        /// All exceptions are fed to the Debug log, whether or not there is an onException callback. Outside of testing, avoid yielding the returned value of this
+        /// method, as that may result in a Coroutine with code which cannot be managed and loss of BetterBehavior guarantees.
         /// </summary>
         /// <param name="targetWork">Work to be started.</param>
         /// <param name="onException">An action which will be fed any exception which causes the coroutine to terminate early.</param>
-        /// <param name="id">Used for managed cancelation.</param>
+        /// <param name="workId">Used for managed cancelation.</param>
+        /// <param name="suppressWarnings">Sometimes reliance on unmanaged Coroutine/AsyncOperation/Etc. behavior is required. This silences warnings for these cases.</param>
         /// <returns>Yields like a typical coroutine in all cases except if the target coroutine experiences an uncaught exception. In this case, it yields a break.</returns>
-        public Coroutine SafelyStartCoroutine(IEnumerator targetWork, Action<Exception> onException = null, long workId = -1)
+        public Coroutine SafelyStartCoroutine(IEnumerator targetWork, Action<Exception> onException = null, long workId = -1, bool suppressWarnings = false)
         {
-            return StartCoroutine(SafelyWrapIEnum(targetWork, onException, workId, Environment.StackTrace.ToString()));
+            return StartCoroutine(SafelyWrapIEnum(targetWork, onException, workId, Environment.StackTrace.ToString(), suppressWarnings));
         }
 
         /// <summary>
@@ -171,18 +174,33 @@ namespace com.DarisaDesigns
         /// <param name="targetWork">Work to be started.</param>
         /// <param name="onException">An action which will be fed any exception which causes the coroutine to terminate early.</param>
         /// <param name="workId">Used for managed cancelation.</param>
-        /// <param name="trace">Optionally provided for naked work to provide context
+        /// <param name="trace">Optionally provided for naked work to provide context</param>
+        /// <param name="suppressWarnings">Sometimes reliance on unmanaged Coroutine/AsyncOperation/Etc. behavior is required. This silences warnings for these cases.</param>
         /// <returns>Passed work wrapped in BestBehavior code for behavioral guarantees.</returns>
-        public IEnumerator SafelyWrapIEnum(IEnumerator targetWork, Action<Exception> onException = null, long workId = -1, string trace = null)
+        public IEnumerator SafelyWrapIEnum(IEnumerator targetWork, Action<Exception> onException = null, long workId = -1, string trace = null, bool suppressWarnings = false)
         {
             if (targetWork == null)
                 throw new ArgumentException("Target IEnumerator targetWork cannot be null.");
             var stack = new Stack<IEnumerator>();
             stack.Push(targetWork);
-           
+
             if (workId == -1 && trace == null)
                 trace = Environment.StackTrace.ToString(); // naked calls to this will not have trace recorded with workId
             trace ??= "";
+
+            string callerName;
+
+            try
+            {
+                callerName = targetWork.ToString();
+            }
+            catch
+            {
+                callerName = targetWork.GetType().FullName;
+            }
+
+            if (suppressWarnings)
+                Debug.Log($"Suppressing warnings for {callerName}");
 
             while (stack.Count > 0)
             {
@@ -193,9 +211,11 @@ namespace com.DarisaDesigns
                 }
                 var cur = stack.Peek();
                 object current;
+                bool movedNext = false;
                 try
                 {
-                    if (!cur.MoveNext())
+                    movedNext = cur.MoveNext();
+                    if (!movedNext)
                     {
                         if (cur is IDisposable disposeMe)
                             disposeMe.Dispose();
@@ -226,27 +246,32 @@ namespace com.DarisaDesigns
                 if (current is IEnumerator nested)
                 {
                     stack.Push(nested);
+
+                    // // wait for next frame if appropriate
+                    // if (movedNext)
+                    //     yield return null;
                     continue;
                 }
 
                 if (workId == -1) // value -1 treated as temp value and set on the fly for naked calls
                     workIdCallTraces[-1] = trace;
 
-                if (current is Coroutine)
+                if (!suppressWarnings && current is Coroutine)
                 {
                     Debug.LogWarning("Please use form: yield return MyIEnumeratorCall() rather than yield return StartCoroutine(MyIEnumeratorCall()) to allow BetterBehavior full scope. Continuing unsafe execution.");
                     PrintStack();
                 }
-                else if (current is AsyncOperation)
+                else if (!suppressWarnings && current is AsyncOperation)
                 {
                     Debug.LogWarning("BetterBehavior cannot control behavior of nested AsyncOperation. Continuing unsafe execution.");
                     PrintStack();
                 }
-                else if (current != null
+                else if (!suppressWarnings
+                    && current != null
                     && current is not YieldInstruction
                     && current is not CustomYieldInstruction)
                 {
-                    Debug.Log("BetterBehavior can safely consume exclusively IEnumerators, YieldInstruction, CustomYieldInstruction, and null (including nested operations). Continuing unsafe execution.");
+                    Debug.LogWarning("BetterBehavior can safely consume exclusively IEnumerators, YieldInstruction, CustomYieldInstruction, and null (including nested operations). Continuing unsafe execution.");
                     PrintStack();
                 }
 
@@ -266,9 +291,9 @@ namespace com.DarisaDesigns
                 void PrintStack()
                 {
                     if (workIdCallTraces.TryGetValue(workId, out var trace))
-                        Debug.LogWarning($"Trace of initial work's call:\n{trace}");
+                        Debug.LogWarning($"Wrapped IEnumerator: {callerName}\nTrace of initial work's call:\n{trace}");
                     else
-                        Debug.LogWarning("Unable to trace work's initial call stack.");
+                        Debug.LogWarning($"Wrapped IEnumerator: {callerName}\nUnable to trace work's initial call stack.");
                 }
             }
 
@@ -289,12 +314,14 @@ namespace com.DarisaDesigns
 
     class WorkUnit
     {
-        public WorkUnit(IEnumerator targetIEnumerator, Action<Exception> OnException)
+        public WorkUnit(IEnumerator targetIEnumerator, Action<Exception> OnException, bool suppressWarnings)
         {
             this.targetIEnumerator = targetIEnumerator;
             this.OnException = OnException;
+            this.suppressWarnings = suppressWarnings;
         }
         public IEnumerator targetIEnumerator;
         public Action<Exception> OnException;
+        public bool suppressWarnings;
     }
 }
